@@ -7,6 +7,7 @@
   <script src="@xterm/xterm/lib/xterm.js"></script>
   <script src="@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="@xterm/addon-attach/lib/addon-attach.js"></script>
+  <script src="@xterm/addon-webgl/lib/addon-webgl.js"></script>
   <style>
     html, body {
       height: 100%;
@@ -68,6 +69,19 @@
     const fitAddon = new window.FitAddon.FitAddon();
     term.loadAddon(fitAddon);
 
+    // Prepare WebGL addon; we'll load it after term.open for reliable activation
+    let webglAddonCandidate = null;
+    try {
+      if (window.WebglAddon && window.WebglAddon.WebglAddon) {
+        webglAddonCandidate = new window.WebglAddon.WebglAddon();
+        console.log('[xterm] WebGL addon constructed.');
+      } else {
+        console.log('[xterm] WebGL addon script not found on window.');
+      }
+    } catch (e) {
+      console.log('[xterm] WebGL addon not supported or failed to construct:', e);
+    }
+
     const termDiv = document.getElementById('terminal');
     const loginDiv = document.getElementById('login');
     const statusDiv = document.getElementById('status');
@@ -106,6 +120,38 @@
 
       term.open(termDiv);
       fitAddon.fit();
+
+      // Try to enable WebGL rendering now that the terminal is opened
+      if (webglAddonCandidate) {
+        try {
+          term.loadAddon(webglAddonCandidate);
+          if (typeof webglAddonCandidate.onContextLoss === 'function') {
+            webglAddonCandidate.onContextLoss(() => {
+              try { webglAddonCandidate.dispose(); } catch (_) {}
+              if (statusDiv) {
+                statusDiv.textContent = 'WebGL-kontekst tabt. Faldt tilbage til canvas-rendering.';
+              }
+              term.write('\r\n[ WebGL-kontekst tabt – faldt tilbage til canvas ]\r\n');
+            });
+          }
+          if (statusDiv) {
+            statusDiv.textContent = 'WebGL-rendering aktiveret.';
+          }
+          console.log('[xterm] WebGL rendering enabled.');
+          term.write('\r\n[ WebGL-rendering aktiveret ]\r\n');
+        } catch (e) {
+          if (statusDiv) {
+            statusDiv.textContent = 'WebGL kunne ikke initialiseres. Bruger standard rendering.';
+          }
+          console.log('[xterm] Failed to load WebGL addon:', e);
+          term.write('\r\n[ WebGL kunne ikke initialiseres – bruger canvas-rendering ]\r\n');
+        }
+      } else {
+        if (statusDiv) {
+          statusDiv.textContent = 'WebGL-addon ikke fundet. Bruger standard rendering.';
+        }
+        term.write('\r\n[ WebGL-addon ikke fundet – bruger canvas-rendering ]\r\n');
+      }
 
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const socketUrl = `${protocol}//${location.host}/terminal?token=${encodeURIComponent(token)}`;

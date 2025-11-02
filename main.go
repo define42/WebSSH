@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -100,7 +99,7 @@ type resizeMsg struct {
 
 // POST /connect  →  returns encrypted token
 func connectHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := ioutil.ReadAll(r.Body)
+	body, _ := io.ReadAll(r.Body)
 	var info sshConnInfo
 	if err := json.Unmarshal(body, &info); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)

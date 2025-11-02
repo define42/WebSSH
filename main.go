@@ -24,6 +24,8 @@ type sshConnInfo struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Port     string `json:"port"`
+	// Expire is a UNIX timestamp (seconds) after which this token is invalid
+	Expire int64 `json:"expire"`
 }
 
 var encryptionKey []byte
@@ -111,6 +113,9 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Attach a server-defined expiry (now + 5 seconds), ignoring any client-provided value
+	info.Expire = time.Now().Unix() + 5
+
 	token, err := encrypt(info)
 	if err != nil {
 		http.Error(w, "encryption failed", http.StatusInternalServerError)
@@ -132,6 +137,13 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 	var info sshConnInfo
 	if err := decrypt(token, &info); err != nil {
 		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+
+	// Enforce token expiry strictly: missing or past expiry are invalid
+	now := time.Now().Unix()
+	if info.Expire == 0 || now > info.Expire {
+		http.Error(w, "token expired", http.StatusUnauthorized)
 		return
 	}
 

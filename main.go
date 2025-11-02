@@ -309,6 +309,13 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 	go func() { io.Copy(wsWriter{ws}, stdout) }()
 	go func() { io.Copy(wsWriter{ws}, stderr) }()
 
+	// if session ends, close WebSocket
+	go func() {
+		session.Wait()
+		ws.Close()
+		logMessage(r, info, "SSH session ended", logrus.InfoLevel, nil)
+	}()
+
 	for {
 		_, msg, err := ws.ReadMessage()
 		if err != nil {

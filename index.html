@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="da">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Danish SSH Terminal</title>
+  <title>Web SSH Terminal</title>
   <link rel="stylesheet" href="@xterm/xterm/css/xterm.css" />
   <script src="@xterm/xterm/lib/xterm.js"></script>
   <script src="@xterm/addon-fit/lib/addon-fit.js"></script>
@@ -48,11 +48,11 @@
 </head>
 <body>
   <div id="login">
-    <input id="ip" placeholder="IP-adresse" />
-    <input id="username" placeholder="Brugernavn" />
-    <input id="password" placeholder="Adgangskode" type="password" />
+    <input id="ip" placeholder="IP address" />
+    <input id="username" placeholder="Username" />
+    <input id="password" placeholder="Password" type="password" />
     <input id="port" placeholder="Port" value="22" />
-    <button id="connectBtn">Opret forbindelse</button>
+    <button id="connectBtn">Connect</button>
     <div id="status"></div>
   </div>
 
@@ -95,11 +95,11 @@
       const port = document.getElementById('port').value.trim();
 
       if (!ip || !username || !password) {
-        statusDiv.textContent = "Udfyld venligst alle felter.";
+        statusDiv.textContent = "Please fill in all fields.";
         return;
       }
 
-      statusDiv.textContent = "Forbinder...";
+      statusDiv.textContent = "Connecting...";
 
       const res = await fetch('/connect', {
         method: 'POST',
@@ -108,7 +108,7 @@
       });
 
       if (!res.ok) {
-        statusDiv.textContent = "Kunne ikke oprette forbindelse";
+        statusDiv.textContent = "Failed to connect";
         return;
       }
 
@@ -129,28 +129,28 @@
             webglAddonCandidate.onContextLoss(() => {
               try { webglAddonCandidate.dispose(); } catch (_) {}
               if (statusDiv) {
-                statusDiv.textContent = 'WebGL-kontekst tabt. Faldt tilbage til canvas-rendering.';
+                statusDiv.textContent = 'WebGL context lost. Fell back to canvas rendering.';
               }
-              term.write('\r\n[ WebGL-kontekst tabt – faldt tilbage til canvas ]\r\n');
+              term.write('\r\n[ WebGL context lost – fell back to canvas ]\r\n');
             });
           }
           if (statusDiv) {
-            statusDiv.textContent = 'WebGL-rendering aktiveret.';
+            statusDiv.textContent = 'WebGL rendering enabled.';
           }
           console.log('[xterm] WebGL rendering enabled.');
-          term.write('\r\n[ WebGL-rendering aktiveret ]\r\n');
+          term.write('\r\n[ WebGL rendering enabled ]\r\n');
         } catch (e) {
           if (statusDiv) {
-            statusDiv.textContent = 'WebGL kunne ikke initialiseres. Bruger standard rendering.';
+            statusDiv.textContent = 'WebGL could not be initialized. Using default rendering.';
           }
           console.log('[xterm] Failed to load WebGL addon:', e);
-          term.write('\r\n[ WebGL kunne ikke initialiseres – bruger canvas-rendering ]\r\n');
+          term.write('\r\n[ WebGL could not be initialized – using canvas rendering ]\r\n');
         }
       } else {
         if (statusDiv) {
-          statusDiv.textContent = 'WebGL-addon ikke fundet. Bruger standard rendering.';
+          statusDiv.textContent = 'WebGL addon not found. Using default rendering.';
         }
-        term.write('\r\n[ WebGL-addon ikke fundet – bruger canvas-rendering ]\r\n');
+        term.write('\r\n[ WebGL addon not found – using canvas rendering ]\r\n');
       }
 
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -158,7 +158,7 @@
       const socket = new WebSocket(socketUrl);
 
       socket.onopen = () => {
-        term.write(`\r\nForbinder til ${ip}:${port}...\r\n`);
+  term.write(`\r\nConnecting to ${ip}:${port}...\r\n`);
         const { cols, rows } = term;
         socket.send(JSON.stringify({ type: "resize", cols, rows }));
       };
@@ -175,7 +175,7 @@
       window.addEventListener('resize', sendResize);
 
       socket.onclose = () => {
-        term.write('\r\n[ Forbindelsen blev afbrudt ]\r\n');
+  term.write('\r\n[ Connection closed ]\r\n');
       };
     }
 

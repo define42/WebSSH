@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <title>Danish SSH Terminal</title>
+  <link rel="stylesheet" href="@xterm/xterm/css/xterm.css" />
+  <script src="@xterm/xterm/lib/xterm.js"></script>
+  <script src="@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="@xterm/addon-attach/lib/addon-attach.js"></script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #1e1e1e;
+      color: white;
+      font-family: sans-serif;
+    }
+    #login {
+      display: flex;
+      flex-direction: column;
+      width: 300px;
+      margin: 5em auto;
+      gap: 0.5em;
+    }
+    #terminal {
+      height: 100%;
+      width: 100%;
+      display: none;
+    }
+    input, button {
+      padding: 6px;
+      border-radius: 6px;
+      border: none;
+      font-size: 1em;
+    }
+    button {
+      cursor: pointer;
+      background: #444;
+      color: white;
+    }
+    #status {
+      margin-top: 0.5em;
+      font-size: 0.9em;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+  <div id="login">
+    <input id="ip" placeholder="IP-adresse" />
+    <input id="username" placeholder="Brugernavn" />
+    <input id="password" placeholder="Adgangskode" type="password" />
+    <input id="port" placeholder="Port" value="22" />
+    <button id="connectBtn">Opret forbindelse</button>
+    <div id="status"></div>
+  </div>
+
+  <div id="terminal"></div>
+
+  <script>
+    // --- Create terminal and addons ---
+    const term = new Terminal({
+      cursorBlink: true,
+      scrollback: 20000,
+      theme: { background: '#1e1e1e', foreground: '#ffffff' }
+    });
+
+    const fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    const termDiv = document.getElementById('terminal');
+    const loginDiv = document.getElementById('login');
+    const statusDiv = document.getElementById('status');
+    const connectBtn = document.getElementById('connectBtn');
+
+    // --- Connect function ---
+    async function connectSSH() {
+      const ip = document.getElementById('ip').value.trim();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const port = document.getElementById('port').value.trim();
+
+      if (!ip || !username || !password) {
+        statusDiv.textContent = "Udfyld venligst alle felter.";
+        return;
+      }
+
+      statusDiv.textContent = "Forbinder...";
+
+      const res = await fetch('/connect', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ip, username, password, port })
+      });
+
+      if (!res.ok) {
+        statusDiv.textContent = "Kunne ikke oprette forbindelse";
+        return;
+      }
+
+      const { token } = await res.json();
+
+      // Hide login, show terminal
+      loginDiv.style.display = "none";
+      termDiv.style.display = "block";
+
+      term.open(termDiv);
+      fitAddon.fit();
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socketUrl = `${protocol}//${location.host}/terminal?token=${encodeURIComponent(token)}`;
+      const socket = new WebSocket(socketUrl);
+
+      socket.onopen = () => {
+        term.write(`\r\nForbinder til ${ip}:${port}...\r\n`);
+        const { cols, rows } = term;
+        socket.send(JSON.stringify({ type: "resize", cols, rows }));
+      };
+
+      const attachAddon = new window.AttachAddon.AttachAddon(socket, { bidirectional: true });
+      term.loadAddon(attachAddon);
+
+      const sendResize = () => {
+        fitAddon.fit();
+        const { cols, rows } = term;
+        socket.send(JSON.stringify({ type: "resize", cols, rows }));
+      };
+      term.onResize(sendResize);
+      window.addEventListener('resize', sendResize);
+
+      socket.onclose = () => {
+        term.write('\r\n[ Forbindelsen blev afbrudt ]\r\n');
+      };
+    }
+
+    // --- Click handler ---
+    connectBtn.onclick = connectSSH;
+
+    // --- Pressing "Enter" anywhere in login triggers connection ---
+    document.querySelectorAll('#login input').forEach(input => {
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          connectSSH();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  webssh:
+    build: ./
+    container_name: webssh
+    network_mode: host
+    ports:
+      - "8080:8080"      # HTTP
+

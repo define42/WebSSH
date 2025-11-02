@@ -341,7 +341,7 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 type wsWriter struct{ ws *websocket.Conn }
 
 func (w wsWriter) Write(p []byte) (int, error) {
-	return len(p), w.ws.WriteMessage(websocket.TextMessage, p)
+	return len(p), w.ws.WriteMessage(websocket.BinaryMessage, p)
 }
 
 // --- Main ---

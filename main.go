@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
@@ -146,12 +147,14 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 		User:            info.Username,
 		Auth:            []ssh.AuthMethod{ssh.Password(info.Password)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         5 * time.Second,
 	}
 
 	conn, err := ssh.Dial("tcp", sshAddr, config)
 	if err != nil {
 		log.Println("ssh dial:", err)
 		ws.WriteMessage(websocket.TextMessage, []byte("SSH connection failed\r\n"))
+		ws.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 		return
 	}
 	defer conn.Close()

@@ -40,9 +40,15 @@ var (
 // --- Log setup with dynamic file creation ---
 
 func setupLogging() {
+
+	// create folder /log if not exists
+	if err := os.MkdirAll("/log/", 0755); err != nil {
+		logrus.Fatalf("Failed to create log directory: %v", err)
+	}
+
 	// Timestamped filename
 	ts := time.Now().Format("2006-01-02_15-04-05")
-	logFilePath = filepath.Join(".", "app-"+ts+".log")
+	logFilePath = filepath.Join("/log/", "webssh-"+ts+".log")
 
 	createLogFile := func() io.Writer {
 		file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -192,19 +198,26 @@ func connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logMessage(r, info, "Generated encrypted SSH token", logrus.InfoLevel)
+	logMessage(r, info, "Generated encrypted SSH token", logrus.InfoLevel, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
-func logMessage(r *http.Request, info sshConnInfo, message string, level logrus.Level) {
-	log.WithFields(logrus.Fields{
-		"ClientIP": r.RemoteAddr,
-		"user":     info.Username,
-		"ip":       info.IP,
-		"port":     info.Port,
-	}).Log(level, message)
+func logMessage(r *http.Request, info sshConnInfo, message string, level logrus.Level, err error) {
+
+	logfields := logrus.Fields{
+		"client_ip": r.RemoteAddr,
+		"user":      info.Username,
+		"server_ip": info.IP,
+		"port":      info.Port,
+	}
+
+	if err != nil {
+		logfields["error"] = err.Error()
+	}
+
+	log.WithFields(logfields).Log(level, message)
 }
 
 func terminalHandler(w http.ResponseWriter, r *http.Request) {
@@ -220,7 +233,7 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 	if err := decrypt(token, &info); err != nil {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		log.Warnf("Invalid token: %v", err)
-		logMessage(r, info, "Invalid token", logrus.WarnLevel)
+		logMessage(r, info, "Invalid token", logrus.WarnLevel, err)
 		return
 	}
 
@@ -228,14 +241,14 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 	if info.Expire == 0 || now > info.Expire {
 		http.Error(w, "token expired", http.StatusUnauthorized)
 		log.Warn("Token expired or invalid")
-		logMessage(r, info, "Token expired or invalid", logrus.WarnLevel)
+		logMessage(r, info, "Token expired or invalid", logrus.WarnLevel, nil)
 		return
 	}
 
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Errorf("WebSocket upgrade failed: %v", err)
-		logMessage(r, info, "WebSocket upgrade failed", logrus.ErrorLevel)
+		logMessage(r, info, "WebSocket upgrade failed", logrus.ErrorLevel, err)
 		return
 	}
 	defer ws.Close()
@@ -248,12 +261,14 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 		Timeout:         5 * time.Second,
 	}
 
+	logMessage(r, info, "Attempting SSH connection", logrus.InfoLevel, nil)
+
 	conn, err := ssh.Dial("tcp", sshAddr, config)
 	if err != nil {
 
 		ws.WriteMessage(websocket.TextMessage, []byte("SSH connection failed\r\n"))
 		ws.WriteMessage(websocket.TextMessage, []byte(err.Error()))
-		logMessage(r, info, "SSH dial failed", logrus.ErrorLevel)
+		logMessage(r, info, "SSH dial failed", logrus.ErrorLevel, err)
 		return
 	}
 	defer conn.Close()
@@ -261,8 +276,7 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 	session, err := conn.NewSession()
 	if err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Failed to start SSH session\r\n"))
-		log.Error("Failed to create SSH session")
-		logMessage(r, info, "Failed to create SSH session", logrus.ErrorLevel)
+		logMessage(r, info, "Failed to create SSH session", logrus.ErrorLevel, err)
 		return
 	}
 	defer session.Close()
@@ -280,19 +294,17 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := session.RequestPty("xterm-256color", 80, 24, modes); err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Failed to allocate PTY\r\n"))
-		log.Error("Failed to allocate PTY")
-		logMessage(r, info, "Failed to allocate PTY", logrus.ErrorLevel)
+		logMessage(r, info, "Failed to allocate PTY", logrus.ErrorLevel, err)
 		return
 	}
 
 	if err := session.Shell(); err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Failed to start remote shell\r\n"))
-		log.Error("Failed to start shell on remote host")
-		logMessage(r, info, "Failed to start remote shell", logrus.ErrorLevel)
+		logMessage(r, info, "Failed to start remote shell", logrus.ErrorLevel, err)
 		return
 	}
 
-	logMessage(r, info, "SSH session started successfully", logrus.InfoLevel)
+	logMessage(r, info, "SSH session started successfully", logrus.InfoLevel, nil)
 
 	go func() { io.Copy(wsWriter{ws}, stdout) }()
 	go func() { io.Copy(wsWriter{ws}, stderr) }()
@@ -300,8 +312,7 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, msg, err := ws.ReadMessage()
 		if err != nil {
-			log.Infof("WebSocket connection closed: %v", err)
-			logMessage(r, info, "WebSocket connection closed", logrus.InfoLevel)
+			logMessage(r, info, "WebSocket connection closed", logrus.InfoLevel, err)
 
 			break
 		}
@@ -309,15 +320,13 @@ func terminalHandler(w http.ResponseWriter, r *http.Request) {
 			var resize resizeMsg
 			if err := json.Unmarshal(msg, &resize); err == nil && resize.Type == "resize" {
 				if err := session.WindowChange(resize.Rows, resize.Cols); err != nil {
-					log.Warnf("Window resize failed: %v", err)
-					logMessage(r, info, "Window resize failed", logrus.WarnLevel)
+					logMessage(r, info, "Window resize failed", logrus.WarnLevel, err)
 				}
 				continue
 			}
 		}
 		if _, err := stdin.Write(msg); err != nil {
-			log.Warnf("Failed to write to SSH stdin: %v", err)
-			logMessage(r, info, "Failed to write to SSH stdin", logrus.WarnLevel)
+			logMessage(r, info, "Failed to write to SSH stdin", logrus.WarnLevel, err)
 		}
 	}
 }
